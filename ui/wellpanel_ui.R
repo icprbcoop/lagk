@@ -21,6 +21,7 @@ wellPanel(
                        c("Current" = "current",
                          "1998summerfall" = "1998summerfall",
                          "1998fallwinter" = "1998fallwinter",
+                         "1999summer" = "1999summer",
                          "2001fallwinter" = "2001fallwinter",
                          "2007summerfall" = "2007summerfall",
                          "2010summerfall" = "2010summerfall"),

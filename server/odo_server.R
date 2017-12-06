@@ -2,15 +2,15 @@
 observeEvent(input$reset.odo, {
   updateCheckboxGroupInput(session, "gages.odo", 
                            selected = c("por", "lfalls",
-                                        "predicted", "marfc"))
+                                        "predicted"))
 })
 #----------------------------------------------------------------------------
 observeEvent(input$clear.odo, {
   updateCheckboxGroupInput(session, "gages.odo", "Variables to show:",
                            c("Point of Rocks" = "por",
                              "Little Falls" = "lfalls",
-                             "Variable Lag-K" = "predicted",
-                             "MARFC Forecast" = "marfc"),
+                             # "Variable Lag-K" = "predicted",
+                             "Variable Lag-K" = "predicted"),
                            selected = NULL)
 })
 #----------------------------------------------------------------------------
@@ -20,7 +20,7 @@ odo.df <- reactive({
       !is.null(todays.date()),
       !is.null(start.date()),
       !is.null(end.date()))
-
+  
   start.date <- start.date() - lubridate::days(7)
   date.temp <- date_frame(start.date,
                           end.date(),
@@ -84,7 +84,7 @@ odo.df <- reactive({
 })
 #----------------------------------------------------------------------------
 output$odo <- renderPlot({
-
+  
   #----------------------------------------------------------------------------
   gen_plots(odo.df(),
             start.date(),
@@ -94,18 +94,14 @@ output$odo <- renderPlot({
             gages.checked = input$gages.odo,
             labels.vec = c("por" = "Point of Rocks",
                            "lfalls" = "Little Falls",
-                           "predicted" = "Little Falls (Predicted)",
-                           "marfc" = "MARFC Forecast"),
+                           "predicted" = "Little Falls (Predicted)"),
             linesize.vec = c("lfalls" = 2,
-                             "marfc" = 1.5,
                              "por" = 2,
                              "predicted" = 1.5),
             linetype.vec = c("lfalls" = "solid",
-                             "marfc" = "dashed",
                              "por" = "solid",
                              "predicted" = "dashed"),
             color.vec = c("lfalls" = "#0072B2",
-                          "marfc" = "#009E73",
                           "por" = "#E69F00",
                           "predicted" = 	"#56B4E9"),
             x.class = "datetime",

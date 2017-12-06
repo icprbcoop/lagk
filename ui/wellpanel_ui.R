@@ -53,10 +53,9 @@ wellPanel(
                             checkboxGroupInput("gages.odo", NULL,
                                                c("Point of Rocks" = "por",
                                                  "Little Falls" = "lfalls",
-                                                 "Variable Lag-K" = "predicted",
-                                                 "MARFC Forecast" = "marfc"),
+                                                 "Variable Lag-K" = "predicted"),
                                                selected = c("por", "lfalls",
-                                                            "predicted", "marfc")),
+                            "predicted")),
                             actionButton("reset.odo", "Reset"),
                             actionButton("clear.odo", "Clear")
            ), # End Conditional Panel North Branch Release

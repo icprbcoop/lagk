@@ -4,31 +4,14 @@ working.data.dir <- reactive({
 #------------------------------------------------------------------------------
 na.replace <- c("", " ", "Eqp", "#N/A", "-999999")
 #------------------------------------------------------------------------------
-marfc.forecast <- reactive({
-  marfc.df <- file.path(working.data.dir(), "flow_fc/nws/MARFC_BRKM2.csv") %>% 
-    data.table::fread(data.table = FALSE,
-                      na.strings = na.replace) %>% 
-    dplyr::filter(type == "forecast") %>% 
-    dplyr::select(date_time, flow) %>% 
-    dplyr::mutate(date_time = lubridate::ymd_hm(date_time),
-                  #stage = as.numeric(gsub("ft", "", stage)),
-                  #state_units = "ft",
-                  flow = as.numeric(gsub("kcfs", "", flow)) * 1000,
-                  #flow_units = "cfs"
-                  site = "marfc")
-  return(marfc.df)
-})
-#------------------------------------------------------------------------------
 hourly.df <- reactive({
-  if(is.null(marfc.forecast())) NULL
-  
+
   hourly.df <- file.path(working.data.dir(), "flows_obs/flow_hourly_cfs.csv") %>% 
     data.table::fread(data.table = FALSE,
                       na.strings = na.replace) %>% 
     dplyr::filter(!is.na(site)) %>% 
     #    dplyr::mutate(date_time = lubridate::mdy_hm(date_time)) %>% 
     dplyr::mutate(date_time = lubridate::ymd_hms(date_time)) %>% 
-    dplyr::bind_rows(marfc.forecast()) %>% 
     dplyr::filter(!is.na(flow))
   
   return(hourly.df)

@@ -21,7 +21,7 @@ lagk.sub <- lagk.df %>%
 
 
 ```{r fig.width=10, fig.height=40}
-ggplot(lagk.sub, aes(date_time, flow, group = site)) +
+ggplot(lagk.sub, aes(date_time, log(flow, base = 10), group = site)) +
   geom_line(aes(color = site), size = 1, alpha = 0.5) +
   scale_x_datetime(date_labels = "%b",
                    date_breaks = "1 month") +

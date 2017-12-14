@@ -18,21 +18,22 @@ library(stringr)
 ## Import Hourly Data
 
 ```{r}
-hourly.df <- data.table::fread("H:/Projects/COOP Data/flows/usgs/hourly/hourly_flows.csv",
-                               data.table = FALSE,
-                               na.strings = c("", " ", "Eqp", "#N/A", "-999999"),
-                               showProgress = FALSE) %>% 
+hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/current/flows_obs/hourly_flows.csv") %>%
+  data.table::fread(
+    data.table = FALSE,
+    na.strings = c("", " ", "Eqp", "#N/A", "-999999"),
+    showProgress = FALSE) %>% 
   filter(site %in% c("goose", "lfalls", "mon_jug", "por", "seneca")) %>% 
   mutate(date_time = ymd_hms(date_time)) %>% 
   filter(!is.na(flow)) #%>% 
-  
-  
-  #mutate(flow = if_else(date_time >= as.POSIXct("1995-01-01") & date_time < as.POSIXct("1996-01-01") & site == "por", 
-  #                      2000000, flow))
+
+
+#mutate(flow = if_else(date_time >= as.POSIXct("1995-01-01") & date_time < as.POSIXct("1996-01-01") & site == "por", 
+#                      2000000, flow))
 
 
 
-         
+
 ```
 
 ```{r}
@@ -94,31 +95,31 @@ lagk.df <- bind_rows(hourly.df, pred.df)
 
 ```{r}
 with.df <- data.table::fread("D:/ZSmith/Projects/COOP/lagk/lagk/data_ts/current/withdrawals/withdrawals_wma_daily_mgd_1990_2017.csv",
-                      data.table = FALSE,
-                      na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
-    dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+                             data.table = FALSE,
+                             na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
+  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
 ```
 
 ```{r}
- pot.total <- with.df %>% 
-    dplyr::filter(location == "Potomac River"#,
-                  #day == "yesterday",
-                  #measurement == "daily average withdrawals"
-    ) %>% 
-    dplyr::group_by(measurement, date_time, units) %>% 
-    dplyr::summarize(value = sum(value)) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::mutate(unique_id = "potomac_total") %>% 
-    dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+pot.total <- with.df %>% 
+  dplyr::filter(location == "Potomac River"#,
+                #day == "yesterday",
+                #measurement == "daily average withdrawals"
+  ) %>% 
+  dplyr::group_by(measurement, date_time, units) %>% 
+  dplyr::summarize(value = sum(value)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(unique_id = "potomac_total") %>% 
+  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
 ```
 
 ```{r}
 withdrawals.df <- dplyr::bind_rows(with.df, pot.total) %>% 
-    dplyr::rename(site = unique_id,
-                  flow = value) %>% 
-    #    dplyr::mutate(date_time = as.Date(date_time, "%m/%d/%Y"))
-    dplyr::mutate(date_time = as.Date(date_time, "%Y-%m-%d")) %>% 
-    dplyr::filter(!stringr::str_detect(site, "usable storage|usable capacity"))
+  dplyr::rename(site = unique_id,
+                flow = value) %>% 
+  #    dplyr::mutate(date_time = as.Date(date_time, "%m/%d/%Y"))
+  dplyr::mutate(date_time = as.Date(date_time, "%Y-%m-%d")) %>% 
+  dplyr::filter(!stringr::str_detect(site, "usable storage|usable capacity"))
 ```
 
 
@@ -148,8 +149,8 @@ lagk.df <- lagk.df %>%
   dplyr::left_join(withdrawals.sub, by = "date") %>% 
   dplyr::select(-date, -time) %>% 
   dplyr::mutate(flow = if_else(site == "predicted" & !is.na(withdrawals),
-                                flow - withdrawals,
-                                flow)) %>% 
+                               flow - withdrawals,
+                               flow)) %>% 
   dplyr::select(-withdrawals)
 ```
 

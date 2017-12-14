@@ -18,7 +18,7 @@ library(stringr)
 ## Import Hourly Data
 
 ```{r}
-hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/current/flows_obs/hourly_flows.csv") %>%
+hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.csv") %>%
   data.table::fread(
     data.table = FALSE,
     na.strings = c("", " ", "Eqp", "#N/A", "-999999"),
@@ -94,9 +94,9 @@ lagk.df <- bind_rows(hourly.df, pred.df)
 ## Import Widthdrawl Data
 
 ```{r}
-with.df <- data.table::fread("D:/ZSmith/Projects/COOP/lagk/lagk/data_ts/current/withdrawals/withdrawals_wma_daily_mgd_1990_2017.csv",
-                             data.table = FALSE,
-                             na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
+with.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/withdrawals/withdrawals_wma_daily_mgd_1990_2017.csv") %>%
+  data.table::fread(data.table = FALSE,
+                    na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
   dplyr::filter(!rowSums(is.na(.)) == ncol(.))
 ```
 

@@ -1,0 +1,49 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+sub.df  <- lagk.df %>% 
+  filter(year(date_time) == "1995") %>% 
+  select(date_time, site, flow) %>% 
+  
+  distinct() %>% 
+  spread(site, flow) %>% 
+  filter(!is.na(por), !is.na(lfalls))
+```
+
+```{r}
+library(xts)
+library(forecast)
+por <- xts::xts(sub.df$por, order.by = sub.df$date_time)
+lfalls <- xts::xts(sub.df$lfalls, order.by = sub.df$date_time)
+lf <- ts(as.vector(lfalls))
+pr <- ts(as.vector(por))
+```
+
+```{r}
+ccf(pr , lf, na.action = na.pass)
+```
+
+```{r}
+astsa::lag2.plot(pr, lf, 10) 
+```
+
+
+```{r}
+ggplot(sub.df, aes(por, lfalls)) +
+  geom_smooth(method='lm',formula=y~x, size = 2, color = "blue") +
+  geom_smooth()
+```
+
+
+```{r}
+library(forecast)
+# Automated forecasting using an exponential model
+fit <- ets(por)
+plot(fit)
+# Automated forecasting using an ARIMA model
+fit <- auto.arima(por)
+```
+

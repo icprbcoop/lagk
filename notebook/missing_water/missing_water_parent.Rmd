@@ -1,0 +1,15 @@
+---
+title: "Missing Water Assessment"
+output: html_document
+---
+
+Last updated: `r Sys.Date()`
+
+```{r child = 'notebook/prepare_lagk/prepare_lagk.Rmd', eval=TRUE}
+
+```
+
+```{r child = 'assessment.Rmd', eval=TRUE}
+
+```
+

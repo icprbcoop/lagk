@@ -156,7 +156,8 @@ lagk.df <- lagk.df %>%
 
 
 ```{r}
-rm(hourly.df, klag.df, pot.total, pred.df, with.df, withdrawals.df, withdrawals.sub, date_frame, variable_confluence, variable_lagk)
+# For the time being lets not remove these - to facilitate QA'ing:
+# rm(hourly.df, klag.df, pot.total, pred.df, with.df, withdrawals.df, withdrawals.sub, date_frame, variable_confluence, variable_lagk)
 ```
 
 

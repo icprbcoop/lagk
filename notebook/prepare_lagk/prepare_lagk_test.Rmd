@@ -57,6 +57,14 @@ klag.df <- klag_subreaches.df %>%
   dplyr::mutate(subreach_lag = reach_lag_hours*frac_of_reach_length,
                 subreach_loss = reach_loss_fraction*frac_of_reach_length)
 ```
+# Display POR to L Falls lags:
+```{r}
+# For display later on this page:
+PORlags <- klag_reaches.df %>%
+  dplyr::filter(reach == "por_to_lfalls") %>%
+  dplyr::mutate(lag = reach_lag_hours, loss = reach_loss_fraction) %>%
+  dplyr:: select(flow_cfs, lag, loss)
+```
 
 ```{r}
 source(file.path(rprojroot::find_rstudio_root_file(), "functions/variable_lagk_func_test.R"))
@@ -174,7 +182,34 @@ lagk.df <- lagk.df %>%
 # For the time being lets not remove these - to facilitate QA'ing:
 # rm(hourly.df, klag.df, pot.total, pred.df, with.df, withdrawals.df, withdrawals.sub, date_frame, variable_confluence, variable_lagk)
 ```
+## Move some of Zach's code to this page for a moment
+```{r}
+lagk.sub <- lagk.df %>% 
+  select(site, date_time, flow) %>% 
+  filter(site %in% c("lfalls", "predicted"),
+         date_time >= "1995-01-01") %>%
+  mutate(year = year(date_time),
+         month = month(date_time, label = TRUE)) %>% 
+  distinct()
+#
+lagk.resid2 <- lagk.sub %>%
+  group_by(date_time, site, year, month) %>% 
+  summarize(flow = mean(flow, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  spread(site, flow) %>% 
+  mutate(residuals = predicted - lfalls,
+         #flow_bins = cut(lfalls, breaks = seq(0, 100000, 500)))
+         flow_bins = ntile(lfalls, 20)) %>% 
+  filter(!is.na(flow_bins)) %>% 
+  group_by(flow_bins) %>% 
+  mutate(bin = paste(min(lfalls, na.rm = TRUE), max(lfalls, na.rm = TRUE), sep = " - "))
+#
+results <- lagk.resid2 %>%
+  group_by(flow_bins, bin) %>%
+  summarize(mse = mean(residuals)) %>%
+  select(flow_bins, bin, mse) %>%
+  ungroup()
+knitr::kable(PORlags)
+knitr::kable(results)
 
-
-
-
+```

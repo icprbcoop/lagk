@@ -1,8 +1,8 @@
 reach,flow_cfs,reach_lag_hours,reach_loss_fraction
-por_to_lfalls,10,48,0.1
-por_to_lfalls,500,30,0.1
-por_to_lfalls,2500,24,0.1
-por_to_lfalls,5000,18,0.05
+por_to_lfalls,10,48,0
+por_to_lfalls,500,30,0
+por_to_lfalls,2500,24,0
+por_to_lfalls,5000,18,0
 por_to_lfalls,12500,12,0
 por_to_lfalls,100000,9,0
 por_to_lfalls,2000000,7,0

@@ -198,6 +198,7 @@ lagk.resid2 <- lagk.sub %>%
   ungroup() %>% 
   spread(site, flow) %>% 
   mutate(residuals = predicted - lfalls,
+                  sqerror = (predicted - lfalls)*2,
          #flow_bins = cut(lfalls, breaks = seq(0, 100000, 500)))
          flow_bins = ntile(lfalls, 20)) %>% 
   filter(!is.na(flow_bins)) %>% 
@@ -206,8 +207,8 @@ lagk.resid2 <- lagk.sub %>%
 #
 results <- lagk.resid2 %>%
   group_by(flow_bins, bin) %>%
-  summarize(mse = mean(residuals)) %>%
-  select(flow_bins, bin, mse) %>%
+  summarize(me = mean(residuals), mse = mean(sqerror)) %>%
+  select(flow_bins, bin, me, mse) %>%
   ungroup()
 knitr::kable(PORlags)
 knitr::kable(results)

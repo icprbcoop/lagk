@@ -1,0 +1,133 @@
+---
+title: "Import"
+author: "Zachary M. Smith"
+date: "December 27, 2017"
+output: html_document
+---
+
+## Import Hourly Data
+```{r}
+hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.csv") %>%
+  data.table::fread(
+    data.table = FALSE,
+    na.strings = c("", " ", "Eqp", "#N/A", "-999999"),
+    showProgress = FALSE) %>% 
+  filter(site %in% c("goose", "lfalls", "mon_jug", "por", "seneca")) %>% 
+  mutate(date_time = ymd_hms(date_time)) %>% 
+  filter(!is.na(flow))
+```
+
+```{r}
+hourly.df <- hourly.df %>% 
+  select(date_time, site, flow) %>% 
+  group_by(date_time, site) %>% 
+  summarize(flow = mean(flow, na.rm = TRUE)) %>% 
+  ungroup() %>%
+  spread(site, flow) %>% 
+  filter(!is.na(goose) & !is.na(lfalls) & !is.na(mon_jug) & !is.na(por) & !is.na(seneca)) %>% 
+  gather(site, flow, goose:seneca)
+```
+
+```{r}
+hourly.df <- hourly.df %>% 
+  mutate(flow = case_when(
+    site == "por" ~ flow * 1.046,
+    site == "mon_jug" ~ flow * 1.189,
+    site == "goose" ~ flow * 1.164,
+    site == "seneca" ~ flow * 1.270,
+    TRUE ~ flow * 1
+  ))
+```
+
+## Import Withdrawals
+```{r}
+with.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/withdrawals/withdrawals_wma_daily_mgd_1990_2017.csv") %>%
+  data.table::fread(data.table = FALSE,
+                    na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
+  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+```
+
+```{r}
+pot.total <- with.df %>% 
+  dplyr::filter(location == "Potomac River"#,
+                #day == "yesterday",
+                #measurement == "daily average withdrawals"
+  ) %>% 
+  dplyr::group_by(measurement, date_time, units) %>% 
+  dplyr::summarize(value = sum(value)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(unique_id = "potomac_total") %>% 
+  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+```
+
+```{r}
+withdrawals.df <- dplyr::bind_rows(with.df, pot.total) %>% 
+  dplyr::rename(site = unique_id,
+                flow = value) %>% 
+  #    dplyr::mutate(date_time = as.Date(date_time, "%m/%d/%Y"))
+  dplyr::mutate(date_time = as.Date(date_time, "%Y-%m-%d")) %>% 
+  dplyr::filter(!stringr::str_detect(site, "usable storage|usable capacity"))
+```
+
+```{r}
+withdrawals.sub <- withdrawals.df %>% 
+  # Yesterday or Today??????????????????????????????????????????????????????????????????????
+  dplyr::filter(measurement == "daily average withdrawals",
+                day == "yesterday") %>% 
+  dplyr::select(date_time, site, flow) %>% 
+  tidyr::spread(site, flow) %>% 
+  dplyr::mutate(withdrawals = rowSums(.[, c('WA Potomac River at Great Falls daily average withdrawals',
+                                            'WA Potomac River at Little Falls daily average withdrawals',
+                                            'FW Potomac River daily average withdrawals',
+                                            'WSSC Potomac River daily average withdrawals')],
+                                      na.rm = TRUE)) %>% 
+  dplyr::select(date_time, withdrawals) %>% 
+  dplyr::rename(date = date_time)
+```
+
+```{r}
+rm(with.df, withdrawals.df, pot.total)
+```
+
+## Klag
+
+### Import lag and loss parameters
+To reduce number of parameters to be adjusted, just calibrate reach lags & 
+losses, calculating subreach lags & losses by multiplying by frac_of_reach_length.  
+!Parameter files are now: 
+
+* k_lag_reaches.csv:  
+    + reach  
+    + flow_cfs  
+    + reach_lag_hours  
+    + reach_loss_fraction    
+* k_lag_subreaches.csv:  
+    + reach  
+    + subreach  
+    + frac_of_reach_length
+    
+```{r}
+klag_reaches.df <- file.path(rprojroot::find_rstudio_root_file(),
+                             "data/parameters/k_lag_reaches.csv") %>% 
+  data.table::fread(data.table = FALSE) %>% 
+  rename_all(tolower) %>% 
+  mutate(reach = tolower(reach))
+
+klag_subreaches.df <- file.path(rprojroot::find_rstudio_root_file(), "data/parameters/k_lag_subreaches.csv") %>% 
+  data.table::fread(data.table = FALSE) %>% 
+  rename_all(tolower) %>% 
+  mutate(reach = tolower(reach),
+         subreach = tolower(subreach))
+
+klag.df <- klag_subreaches.df %>%
+  dplyr::left_join(klag_reaches.df, by = "reach") %>%
+  dplyr::mutate(subreach_lag = reach_lag_hours*frac_of_reach_length,
+                subreach_loss = reach_loss_fraction*frac_of_reach_length)
+```
+
+```{r}
+rm(klag_reaches.df, klag_subreaches.df)
+```
+
+
+

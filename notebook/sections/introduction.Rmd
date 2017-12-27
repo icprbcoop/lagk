@@ -1,0 +1,13 @@
+---
+title: "Intro"
+author: "Zachary M. Smith"
+date: "December 27, 2017"
+output: html_document
+---
+
+```{r, messages=FALSE}
+library(tidyverse)
+library(lubridate)
+library(stringr)
+```
+

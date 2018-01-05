@@ -1,0 +1,179 @@
+---
+title: "Optimization"
+author: Zachary M. Smith
+output: html_notebook
+---
+
+## Lag K Optimization
+# Display POR to L Falls lagp:
+```{r}
+# For display later on this page:
+PORlags <- klag_reaches.df %>%
+  dplyr::filter(reach == "por_to_lfalls") %>%
+  dplyr::mutate(lag = reach_lag_hours, loss = reach_loss_fraction) %>%
+  dplyr:: select(flow_cfs, lag, loss)
+```
+
+```{r}
+source(file.path(rprojroot::find_rstudio_root_file(), "functions/variable_lagk_func_test.R"))
+```
+
+```{r}
+date_frame <- function(start.date, end.date, seq.by = "hour") {
+  
+  data.frame(date_time = seq.POSIXt(start.date, end.date, by = seq.by))
+}
+```
+
+
+```{r}
+#
+# Zach are the assignment necessary in this definition of the function?
+#
+long1.df <- hourly_adjusted.df
+gage1 <- "por" # this is node of the hydrograph to be lagged; maybe the "head node"?
+subreach1 <- "por_1"
+long2.df <- hourly_adjusted.df
+gage2 <- "mon_jug" # this is node of the second contributing hydrograph to be lagged
+subreach2 <- "monoc_1"
+
+
+variable_confluence <- function(long1.df, gage1, subreach1,
+                                long2.df, gage2, subreach2, klag.df) {
+  g1.df <- variable_lagk(long1.df, gage1, subreach1, klag.df)
+  g2.df <- variable_lagk(long2.df, gage2, subreach2, klag.df)
+  final.df <- bind_rows(long2.df, g1.df, g2.df) %>% 
+    group_by(date_time, site) %>% 
+    summarize(flow = sum(flow)) %>% # summing the two lagged hydrographs
+    ungroup()
+  return(final.df)
+}
+```
+
+```{r}
+#
+# Below is the main calculation.
+# por_1 is the reach from POR gage to Monocacy confluence.
+# por_2 is from Monocacy confluence to the Goose confluence.
+# por_3 is from the Goose confluence to the Seneca confluence.
+# por_4 is from the Seneca confluence to Little Falls.
+# Note that for now, total WMA withdrawals is subtracted before 
+#
+pred_1_to_3.df <- variable_confluence(hourly_adjusted.df, "por", "por_1", 
+                               hourly_adjusted.df, "mon_jug", "monoc_1", klag.df) %>% 
+  variable_confluence("predicted", "por_2",
+                      hourly_adjusted.df, "goose", "goose_1", klag.df) %>% 
+  variable_confluence("predicted", "por_3",
+                      hourly_adjusted.df, "seneca", "seneca_1", klag.df)# %>% 
+# pred_1_to_3.df has columns: date_time, 
+#                             site (por, mon_jug, goose, seneca, lfalls, predicted),
+#                             flow
+pred.df <- variable_lagk(pred_1_to_3.df, "predicted", "por_4", klag.df)
+```
+
+```{r}
+# lagk.df <- bind_rows(hourly.df, pred.df)
+ lagk_results.df <- bind_rows(hourly.df, pred.df)
+```
+
+
+## Import Widthdrawl Data
+
+```{r}
+with.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/withdrawals/withdrawals_wma_daily_mgd_1990_2017.csv") %>%
+  data.table::fread(data.table = FALSE,
+                    na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
+  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+```
+
+```{r}
+pot.total <- with.df %>% 
+  dplyr::filter(location == "Potomac River"#,
+                #day == "yesterday",
+                #measurement == "daily average withdrawals"
+  ) %>% 
+  dplyr::group_by(measurement, date_time, units) %>% 
+  dplyr::summarize(value = sum(value)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(unique_id = "potomac_total") %>% 
+  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+```
+
+```{r}
+withdrawals.df <- dplyr::bind_rows(with.df, pot.total) %>% 
+  dplyr::rename(site = unique_id,
+                flow = value) %>% 
+  #    dplyr::mutate(date_time = as.Date(date_time, "%m/%d/%Y"))
+  dplyr::mutate(date_time = as.Date(date_time, "%Y-%m-%d")) %>% 
+  dplyr::filter(!stringr::str_detect(site, "usable storage|usable capacity"))
+```
+
+
+```{r}
+withdrawals.sub <- withdrawals.df %>% 
+  # Yesterday or Today??????????????????????????????????????????????????????????????????????
+  dplyr::filter(measurement == "daily average withdrawals",
+                day == "yesterday") %>% 
+  dplyr::select(date_time, site, flow) %>% 
+  tidyr::spread(site, flow) %>% 
+  dplyr::mutate(withdrawals = rowSums(.[, c('WA Potomac River at Great Falls daily average withdrawals',
+                                            'WA Potomac River at Little Falls daily average withdrawals',
+                                            'FW Potomac River daily average withdrawals',
+                                            'WSSC Potomac River daily average withdrawals')],
+                                      na.rm = TRUE)) %>% 
+  dplyr::select(date_time, withdrawals) %>% 
+  dplyr::rename(date = date_time)
+```
+
+## Join Lag-K with Widthdrawl Data
+
+```{r}
+lagk_results.df <- lagk_results.df %>% 
+  tidyr::separate(date_time, into = c("date", "time"), convert = TRUE,
+                  sep = " ", remove = FALSE) %>% 
+  dplyr::mutate(date = as.Date(date)) %>% 
+  dplyr::left_join(withdrawals.sub, by = "date") %>% 
+  dplyr::select(-date, -time) %>% 
+  dplyr::mutate(flow = if_else(site == "predicted" & !is.na(withdrawals),
+                               flow - withdrawals,
+                               flow)) %>% 
+  dplyr::select(-withdrawals)
+```
+
+
+```{r}
+# For the time being lets not remove these - to facilitate QA'ing:
+# rm(hourly.df, klag.df, pot.total, pred.df, with.df, withdrawals.df, withdrawals.sub, date_frame, variable_confluence, variable_lagk)
+```
+## Move some of Zach's code to this page for a moment
+```{r}
+lagk_results.sub <- lagk_results.df %>% 
+  select(site, date_time, flow) %>% 
+  filter(site %in% c("lfalls", "predicted"),
+         date_time >= "1995-01-01") %>%
+  mutate(year = year(date_time),
+         month = month(date_time, label = TRUE)) %>% 
+  distinct()
+#
+lagk_results.resid2 <- lagk_results.sub %>%
+  group_by(date_time, site, year, month) %>% 
+  summarize(flow = mean(flow, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  spread(site, flow) %>% 
+  mutate(residuals = predicted - lfalls,
+                  sqerror = (predicted - lfalls)*2,
+         #flow_bins = cut(lfalls, breaks = seq(0, 100000, 500)))
+         flow_bins = ntile(lfalls, 20)) %>% 
+  filter(!is.na(flow_bins)) %>% 
+  group_by(flow_bins) %>% 
+  mutate(bin = paste(min(lfalls, na.rm = TRUE), max(lfalls, na.rm = TRUE), sep = " - "))
+#
+results <- lagk.resid2 %>%
+  group_by(flow_bins, bin) %>%
+  summarize(me = mean(residuals), mse = mean(sqerror)) %>%
+  select(flow_bins, bin, me, mse) %>%
+  ungroup()
+knitr::kable(PORlags)
+knitr::kable(results)
+
+```

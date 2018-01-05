@@ -1,6 +1,6 @@
 
 variable_lagk <- function(long.df, site.name, por.lag, klag.df) {
-  # long.df is name of time series hourly flow data file
+  # long.df is name of time series hourly flow data frame, e.g. hourly.df
   # site.name is name of node (e.g. gage) of hydrograph to be lagged (from time series hourly flow data file)
   # por.lag is name of the subreach for which the lag/loss applies
   # klag.df is the table giving subreach, subreach_lag, subreach_loss

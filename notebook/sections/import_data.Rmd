@@ -27,9 +27,9 @@ hourly.df <- hourly.df %>%
   filter(!is.na(goose) & !is.na(lfalls) & !is.na(mon_jug) & !is.na(por) & !is.na(seneca)) %>% 
   gather(site, flow, goose:seneca)
 ```
-
+The area adjustment factors below account for ungaged drainage areas. They were computed using river segment areas in the CBP's Phase 5.2 watershed model. 
 ```{r}
-hourly.df <- hourly.df %>% 
+hourly_adjusted.df <- hourly.df %>% 
   mutate(flow = case_when(
     site == "por" ~ flow * 1.046,
     site == "mon_jug" ~ flow * 1.189,
@@ -48,28 +48,34 @@ with.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/wi
 ```
 
 ```{r}
-pot.total <- with.df %>% 
-  dplyr::filter(location == "Potomac River"#,
+pot.wma.total <- with.df %>% 
+  dplyr::filter(location == "Potomac River" | location == "Potomac River at Little Falls"
+                | location == "Potomac River at Great Falls" #,
                 #day == "yesterday",
                 #measurement == "daily average withdrawals"
   ) %>% 
   dplyr::group_by(measurement, date_time, units) %>% 
   dplyr::summarize(value = sum(value)) %>% 
   dplyr::ungroup() %>% 
-  dplyr::mutate(unique_id = "potomac_total") %>% 
+  dplyr::mutate(unique_id = "potomac_wma_total") %>% 
   dplyr::filter(!rowSums(is.na(.)) == ncol(.))
 ```
 
 ```{r}
-withdrawals.df <- dplyr::bind_rows(with.df, pot.total) %>% 
+# Zach - I think we can forget this and just work with pot.wma.total?
+withdrawals.df <- dplyr::bind_rows(with.df, pot.wma.total) %>% 
   dplyr::rename(site = unique_id,
                 flow = value) %>% 
   #    dplyr::mutate(date_time = as.Date(date_time, "%m/%d/%Y"))
   dplyr::mutate(date_time = as.Date(date_time, "%Y-%m-%d")) %>% 
   dplyr::filter(!stringr::str_detect(site, "usable storage|usable capacity"))
 ```
-
+Need to confirm with Sarah that "yesterday" means reported actual for the given date time.
+Jan 3, 2018: actually she says date is not date of actual withdrawal, but she will change
+this soon.
 ```{r}
+# withdrawals.sub is a time series of total WMA Potomac daily withdrawals
+# Zach - I think we can forget this and just work with pot.wma.total?
 withdrawals.sub <- withdrawals.df %>% 
   # Yesterday or Today??????????????????????????????????????????????????????????????????????
   dplyr::filter(measurement == "daily average withdrawals",
@@ -85,9 +91,10 @@ withdrawals.sub <- withdrawals.df %>%
   dplyr::rename(date = date_time)
 ```
 
-```{r}
-rm(with.df, withdrawals.df, pot.total)
-```
+# Don't remove for now for QAing:
+#```{r}
+#rm(with.df, withdrawals.df, pot.total)
+#```
 
 ## Klag
 
@@ -125,9 +132,10 @@ klag.df <- klag_subreaches.df %>%
                 subreach_loss = reach_loss_fraction*frac_of_reach_length)
 ```
 
-```{r}
-rm(klag_reaches.df, klag_subreaches.df)
-```
+# Don't remove for now - to allow QAing
+#```{r}
+#rm(klag_reaches.df, klag_subreaches.df)
+#```
 
 
 

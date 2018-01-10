@@ -1,0 +1,35 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+This is sample code from Scrucca, L. (2013). GA: a package for genetic algorithms in R. Journal of Statistical Software, 53(4), 1-37.
+```{r}
+library(GA)
+library(spuRs)
+```
+
+
+```{r}
+data("trees", package = "spuRs")
+tree <- trees[trees$ID == "1.3.11", 2:3]
+# I'm adding con1 to the Richards function to test having other inputs.
+# Presence of con1 doesn't seem to bother GA.
+richards <- function(x, theta, con1)
+{theta[1] * (con1 - exp(-theta[2] * x))^theta[3]}
+#con1 <- 1 # this also works, but adding con1 = 1 to x = and y = also
+fitnessL2 <- function(theta, x, y, con1) 
+  {-sum((y - richards(x, theta, con1))^2)}
+GA2 <- ga(type = "real-valued", fitness = fitnessL2,
+          x = tree$Age, y = tree$Vol, con1 = 1, min = c(3000, 0, 2), 
+          max = c(4000, 1, 4), popSize = 500, 
+          crossover = gareal_blxCrossover, maxiter = 5000,
+          run = 200, names = c("a", "b", "c"))
+summary(GA2)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).

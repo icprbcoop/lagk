@@ -1,14 +1,15 @@
 
-variable_lagk <- function(long.df, site.name, por.lag, klag.df) {
+variable_lagk <- function(long.df, site.name, por.lag, vklag.df) {
   # long.df is name of time series hourly flow data frame, e.g. hourly.df
   # site.name is name of node (e.g. gage) of hydrograph to be lagged (from time series hourly flow data file)
   # por.lag is name of the subreach for which the lag/loss applies
-  # klag.df is the table giving subreach, subreach_lag, subreach_loss
+  # klag.df is the table with columns: site, flow, ..., lag, loss
   #
-  klag.sub <- klag.df %>% 
-    dplyr::filter(subreach == por.lag) %>% 
+  klag.sub <- vklag.df %>% 
+    dplyr::filter(site == por.lag) %>% 
 #    dplyr::select(flow, lag)
-    dplyr::mutate(lag = subreach_lag, loss = subreach_loss, flow_bin = flow_cfs) %>% 
+#    dplyr::mutate(lag = subreach_lag, loss = subreach_loss, flow_bin = flow_cfs) %>% 
+    dplyr::mutate(lag = lag, loss = loss, flow_bin = flow) %>% 
     dplyr::select(flow_bin, lag, loss)
 
   #------------------------------------------------------------------------------

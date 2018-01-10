@@ -9,5 +9,8 @@ output: html_document
 library(tidyverse)
 library(lubridate)
 library(stringr)
+library(zoo)
+library(GA)
+#library(hydroGOF)
 ```
 

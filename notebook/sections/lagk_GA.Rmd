@@ -1,0 +1,97 @@
+---
+title: "Optimization"
+author: Zachary M. Smith
+output: html_notebook
+---
+
+## Lag K Optimization
+# Display POR to L Falls lagp:
+
+```{r}
+source(file.path(rprojroot::find_rstudio_root_file(), "functions/variable_lagk_func_test.R"))
+```
+
+```{r}
+date_frame <- function(start.date, end.date, seq.by = "hour") {
+  
+  data.frame(date_time = seq.POSIXt(start.date, end.date, by = seq.by))
+}
+```
+
+
+```{r}
+variable_confluence <- function(long1.df, gage1, subreach1,
+                                long2.df, gage2, subreach2, klag.df) {
+  g1.df <- variable_lagk(long1.df, gage1, subreach1, klag.df)
+  g2.df <- variable_lagk(long2.df, gage2, subreach2, klag.df)
+  final.df <- bind_rows(long2.df, g1.df, g2.df) %>% 
+    group_by(date_time, site) %>% 
+    summarize(flow = sum(flow)) %>% # summing the two lagged hydrographs
+    ungroup()
+  return(final.df)
+}
+```
+
+```{r}
+#
+# Below is the main calculation.
+# por_1 is the reach from POR gage to Monocacy confluence.
+# por_2 is from Monocacy confluence to the Goose confluence.
+# por_3 is from the Goose confluence to the Seneca confluence.
+# por_4 is from the Seneca confluence to Little Falls.
+# Note that for now, total WMA withdrawals is subtracted before 
+#
+pred.1.3.df <- variable_confluence(hourly_adjusted.df, "por", "por_1", 
+                               hourly_adjusted.df, "mon_jug", "monoc_1", klag.df) %>% 
+  variable_confluence("predicted", "por_2",
+                      hourly_adjusted.df, "goose", "goose_1", klag.df) %>% 
+  variable_confluence("predicted", "por_3",
+                      hourly_adjusted.df, "seneca", "seneca_1", klag.df)# %>% 
+# pred_1_to_3.df has columns: date_time, 
+#                             site (por, mon_jug, goose, seneca, lfalls, predicted),
+#                             flow
+# create date column; do a left join, 
+pred.1.3.df <- pred.1.3.df %>%
+  dplyr::mutate(date = as.Date(date_time)) %>%
+  dplyr::left_join(pot.wma.total.daily, by = "date") %>%
+  dplyr::mutate(flow = if_else(site == "predicted" & !is.na(withdr_pot_tot_mgd),
+                               flow - withdr_pot_tot_mgd,
+                               flow))
+pred.df <- variable_lagk(pred.1.3.df, "predicted", "por_4", klag.df)
+```
+## Create a wide df of lfalls sim and obs, and calculate some stats:
+```{r}
+# lagk.df <- bind_rows(hourly.df, pred.df)
+lagk.results.df <- bind_rows(hourly.df, pred.df) %>%
+  dplyr::filter(site %in% c("lfalls", "predicted"))
+lagk.results.wide <- lagk.results.df %>%
+  tidyr::spread(site, flow) %>%
+  dplyr::filter(lfalls != "NA", predicted != "NA") %>%
+  dplyr::rename(obs = lfalls, sim = predicted) %>%
+  dplyr::mutate(lobs = log10(obs), lsim = log10(sim))
+simbar <- mean(lagk.results.wide$sim)
+obsbar <- mean(lagk.results.wide$obs)
+lsimbar <- mean(lagk.results.wide$lsim)
+lobsbar <- mean(lagk.results.wide$lobs)
+lagk.results.wide <- lagk.results.wide %>%
+  dplyr::mutate(se = (sim - obs)^2, 
+                ss = (obs - obsbar)^2,
+                ae = abs(sim - obs),
+                ape = abs((sim-obs)/obs),
+                se_l = (lsim - lobs)^2, 
+                ss_l = (lobs - lobsbar)^2,
+                ae_l = abs(lsim - lobs),
+                ape_l = abs((lsim-lobs)/lobs))
+mse <- mean(lagk.results.wide$se)
+mss <- mean(lagk.results.wide$ss)
+mae <- mean(lagk.results.wide$ae)
+mape <- mean(lagk.results.wide$ape)
+nse <- 1 - mse/mss
+mse_l <- mean(lagk.results.wide$se_l)
+mss_l <- mean(lagk.results.wide$ss_l)
+mae_l <- mean(lagk.results.wide$ae_l)
+mape_l <- mean(lagk.results.wide$ape_l)
+nse_l <- 1 - mse_l/mss_l
+
+```
+## 

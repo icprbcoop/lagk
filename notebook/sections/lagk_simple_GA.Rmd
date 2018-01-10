@@ -45,6 +45,7 @@ hourly.adj.df <- hourly.df %>%
   # Values of theta = c(lag, loss) will be adjusted by GA 
   #     to maximize negative_rmse.
 negative_rmse <- function(theta, long.df, gage, subreach, vklag.df) {
+#  negative_rmse <- function(lag, loss, long.df, gage, subreach, vklag.df) {
   # long.df = hourly.adj.df has 
   #     date_time
   #     site (lfalls, por)
@@ -53,12 +54,13 @@ negative_rmse <- function(theta, long.df, gage, subreach, vklag.df) {
   # theta[2] = a loss parameter to be optimized
   # gage (site.name): gage whose data is to be lagged - will be set at "por""
   # subreach (por.lag): downstream subreach - will be set at "por_all"
+  #
   # First need to change targeted lags and losses in klag.df
   # klag.opt will be like klag.df, but will have the altered lag & loss
-  klag.opt <- vklag.df %>%
-    dplyr::mutate(lag = if_else(site == "por_all" & flow == 50, 
+   klag.opt <- vklag.df %>%
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 5000, 
                                 theta[1], lag)) %>%
-    dplyr::mutate(loss = if_else(site == "por_all" & flow == 50, 
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 5000, 
                                 theta[2], loss))
   #
   pred.df <- variable_lagk(long.df, gage, subreach, klag.opt)
@@ -69,15 +71,15 @@ negative_rmse <- function(theta, long.df, gage, subreach, vklag.df) {
   #
   lagk.results.wide <- lagk.results.df %>%
   tidyr::spread(site, flow) %>%
-  dplyr::filter(lfalls != "NA", predicted != "NA") %>%
+  dplyr::filter(!is.na(lfalls), !is.na(predicted)) %>%
     dplyr::mutate(se = (lfalls - predicted)^2)
   mse <- mean(lagk.results.wide$se)
 # rmse <- sqrt(mean(lagk.results.wide$lfalls
 #                  - lagk.results.wide$predicted)^2)
 rmse2 <- sqrt(mse)
-rm(pred.df, lagk.results.df, lagk.results.wide)
 #answer <- list(lagk.results.wide, rmse2)
-return(-rmse2)
+answer <- -rmse2
+return(answer)
 }
 #test <- negative_rmse(c(48, 0), hourly.adj.df, "por", "por_all", klag.df)
 #write.csv(test[1], file = "dump.csv")
@@ -92,8 +94,8 @@ return(-rmse2)
 GAsimple <- ga(type = "real-valued", fitness = negative_rmse,
                long.df = hourly.adj.df, gage = "por", 
                subreach = "por_all", vklag.df = klag.df,
-               min = c(45, -0.05), max = c(55, 0.05),
-               maxiter = 10)
+               min = c(15, -0.05), max = c(25, 0.05),
+               maxiter = 50)
 summary(GAsimple)
 ```
 

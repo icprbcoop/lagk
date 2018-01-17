@@ -1,0 +1,213 @@
+---
+title: "Untitled"
+author: "Zachary M. Smith"
+date: "January 16, 2018"
+output: html_document
+---
+
+---
+title: "Optimization"
+author: Zachary M. Smith
+output: html_notebook
+---
+
+## Simple Lag K Optimization using GA package: subreach is simply POR to LFalls.
+```{r}
+# klag.df columns are: site, flow, ..., lag, loss
+klag.df <- file.path(rprojroot::find_rstudio_root_file(),
+                     "data/parameters/k_lag.csv") %>% 
+  data.table::fread(data.table = FALSE) %>%
+  rename_all(tolower) %>%
+  mutate(site = tolower(site))
+```
+
+```{r}
+hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.csv") %>%
+  data.table::fread(
+    data.table = FALSE,
+    na.strings = c("", " ", "Eqp", "#N/A", "-999999"),
+    showProgress = FALSE) %>% 
+  filter(site %in% c("goose", "lfalls", "mon_jug", "por", "seneca")) %>% 
+  mutate(date_time = ymd_hms(date_time)) %>% 
+  filter(!is.na(flow))
+```
+
+```{r}
+# 
+source(file.path(rprojroot::find_rstudio_root_file(), "functions/variable_lagk_func.R"))
+```
+
+
+## Simple Test
+
+For simple first test of GA, just predict L Falls from area-adjusted Point of Rocks, forgetting for the moment about withdrawals, and restrict time period.
+```{r}
+# 
+start_data <- as.POSIXct("1997-04-01 00:00")
+end_data <- as.POSIXct("1997-06-01 00:00")
+#
+hourly.adj.df <- hourly.df %>%
+  dplyr::filter(date_time >= start_data, 
+                date_time < end_data) %>%
+  dplyr::mutate(flow = case_when(
+    site == "por" ~ flow * 11560/9651, # area-adj POR flow
+    TRUE ~ flow)) %>% 
+  select(-agency, -timezone, -qual_code)
+```
+
+```{r}
+# The function defined here, negative_rmse, will serve as 
+#    the "fitness" function.
+# Values of theta = c(lag, loss) will be adjusted by GA 
+#     to maximize negative_rmse.
+#theta <- c(lag.min, loss.min)
+#theta <- lag.min
+#long.df = hourly.adj.df
+#vklag.df = klag.alt
+negative_rmse <- function(theta, long.df, vklag.df) {
+  #----------------------------------------------------------------------------
+  theta.vec <- unlist(theta)
+  #----------------------------------------------------------------------------
+  klag.opt <- vklag.df
+  #klag.opt$lag <- theta.vec
+  klag.opt$lag <- theta.vec[1:(length(theta.vec) / 2)]
+  klag.opt$loss <- theta.vec[(length(theta.vec) / 2 + 1):length(theta.vec)]
+  #----------------------------------------------------------------------------
+  pred.df <- pred_lfalls(long.df, klag.opt)
+  #----------------------------------------------------------------------------
+  rmse <- calc_rmse(long.df, pred.df)
+  return(rmse)
+}
+```
+
+
+
+## GA
+
+```{r}
+klag.alt <- klag.df %>%  
+  #filter(site != "por_all") %>% 
+  mutate(lag_quant = lag * 0.1,
+         lag_min = lag - lag_quant,
+         lag_max = lag + lag_quant,
+         loss_min = -0.5,
+         loss_max = 0.5)
+
+lag.min <- klag.alt$lag_min
+lag.max <- klag.alt$lag_max
+loss.min <- klag.alt$loss_min
+loss.max <- klag.alt$loss_max
+lag.org <- klag.alt$lag
+loss.org <- klag.alt$loss
+```
+
+```{r}
+org.rmse <- negative_rmse(c(lag.org, loss.org), long.df = hourly.adj.df, vklag.df = klag.alt)
+```
+
+```{r}
+ga.simple <- ga(type = "real-valued", fitness = negative_rmse,
+               long.df = hourly.adj.df, vklag.df = klag.alt,
+               min = c(lag.min, loss.min),
+               max = c(lag.max, loss.max),
+               run  = 20,
+               maxiter = 200,
+               seed = 84,  # Selected with: sample(1:100, 1)
+               optim = TRUE,
+               parallel = TRUE
+               )
+summary(ga.simple)
+```
+
+```{r}
+plot(ga.simple)
+```
+
+```{r}
+klag.alt  <- klag.alt  %>% 
+  mutate(best_lag = ga.simple@solution[1:nrow(.)],
+         best_loss = ga.simple@solution[(nrow(.) + 1):length(ga.simple@solution)],
+         ga_rmse = ga.simple@fitnessValue,
+         org_rmse = org.rmse)
+
+file.dir <- paste0("ga_klag_thresholds_", format(Sys.Date(), "%m_%d_%Y"), ".csv")
+data.table::fwrite(klag.alt,
+                   file.path(rprojroot::find_rstudio_root_file(), "data/parameters", file.dir))
+
+```
+
+```{r}
+org.df <- pred_lfalls(hourly.adj.df, klag.alt)
+```
+
+```{r}
+klag.ga <- klag.alt %>% 
+  select(site, flow, best_lag, best_loss) %>% 
+  rename(lag = best_lag,
+         loss = best_loss)
+ga.df <- pred_lfalls(hourly.adj.df, klag.ga) %>% 
+  mutate(site = if_else(site == "predicted", "ga", site)) %>% 
+  filter(site == "ga")
+```
+
+```{r}
+comb.df <- org.df %>% 
+  filter(site %in% c("lfalls", "predicted")) %>% 
+  mutate(site = if_else(site == "predicted", "original", site)) %>% 
+  bind_rows(ga.df)
+```
+
+```{r}
+ggplot(comb.df, aes(date_time, flow, group = site)) +
+  geom_line(aes(color = site, size = site, alpha = site)) +
+  scale_alpha_manual(values = c("lfalls" = 1,
+                               "ga" = 0.5,
+                               "original" = 0.5)) +
+  scale_color_manual(values = c("lfalls" = "gray",
+                               "ga" = "red",
+                               "original" = "green")) +
+  scale_size_manual(values = c("lfalls" = 1.2,
+                               "ga" = 1,
+                               "original" = 1)) +
+  scale_x_datetime(date_labels = "%b",
+                   date_breaks = "1 month")
+```
+
+
+## Create a wide df of lfalls sim and obs, and calculate some stats:
+
+```{r}
+# lagk.df <- bind_rows(hourly.df, pred.df)
+lagk.results.df <- bind_rows(hourly.df, pred.df) %>%
+  dplyr::filter(site %in% c("lfalls", "predicted"))
+lagk.results.wide <- lagk.results.df %>%
+  tidyr::spread(site, flow) %>%
+  dplyr::filter(lfalls != "NA", predicted != "NA") %>%
+  dplyr::rename(obs = lfalls, sim = predicted) %>%
+  dplyr::mutate(lobs = log10(obs), lsim = log10(sim))
+simbar <- mean(lagk.results.wide$sim)
+obsbar <- mean(lagk.results.wide$obs)
+lsimbar <- mean(lagk.results.wide$lsim)
+lobsbar <- mean(lagk.results.wide$lobs)
+lagk.results.wide <- lagk.results.wide %>%
+  dplyr::mutate(se = (sim - obs)^2, 
+                ss = (obs - obsbar)^2,
+                ae = abs(sim - obs),
+                ape = abs((sim-obs)/obs),
+                se_l = (lsim - lobs)^2, 
+                ss_l = (lobs - lobsbar)^2,
+                ae_l = abs(lsim - lobs),
+                ape_l = abs((lsim-lobs)/lobs))
+mse <- mean(lagk.results.wide$se)
+mss <- mean(lagk.results.wide$ss)
+mae <- mean(lagk.results.wide$ae)
+mape <- mean(lagk.results.wide$ape)
+nse <- 1 - mse/mss
+mse_l <- mean(lagk.results.wide$se_l)
+mss_l <- mean(lagk.results.wide$ss_l)
+mae_l <- mean(lagk.results.wide$ae_l)
+mape_l <- mean(lagk.results.wide$ape_l)
+nse_l <- 1 - mse_l/mss_l
+
+```
+## 

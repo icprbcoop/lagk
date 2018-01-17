@@ -6,11 +6,12 @@ output: html_document
 ---
 
 ```{r, messages=FALSE}
-library(tidyverse)
-library(lubridate)
-library(stringr)
-library(zoo)
-library(GA)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(zoo))
+suppressPackageStartupMessages(library(GA))
 #library(hydroGOF)
 ```
 

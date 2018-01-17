@@ -1,5 +1,7 @@
 ## ------------------------------------------------------------------------
-hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.csv") %>%
+hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.zip") %>%
+  unzip(exdir = file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.csv"),
+        overwrite = TRUE) %>% 
   data.table::fread(
     data.table = FALSE,
     na.strings = c("", " ", "Eqp", "#N/A", "-999999"),

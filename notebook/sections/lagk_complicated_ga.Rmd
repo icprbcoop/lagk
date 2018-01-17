@@ -22,7 +22,8 @@ klag.df <- file.path(rprojroot::find_rstudio_root_file(),
 ```
 
 ```{r}
-hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.csv") %>%
+hourly.df <- file.path(rprojroot::find_rstudio_root_file(),
+                       "data_ts/historical/flows_obs/hourly_flows/hourly_flows.csv") %>%
   data.table::fread(
     data.table = FALSE,
     na.strings = c("", " ", "Eqp", "#N/A", "-999999"),

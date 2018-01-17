@@ -56,16 +56,6 @@ variable_confluence <- function(long1.df, gage1, lag1,
   return(final.df)
 }
 
-fast_variable_confluence <- function(long1.df, gage1, lag1,
-                                long2.df, gage2, lag2, klag.df) {
-  g1.dt <- data.table::data.table(fast_variable_lagk(long1.df, gage1, lag1, klag.df))
-  g2.dt <- data.table::data.table(fast_variable_lagk(long2.df, gage2, lag2, klag.df))
-  final.dt <- rbindlist(list(g1.dt, g2.dt))
-  final.dt[, flow := sum(flow), , by = .(date_time, site)]
-  final.df <- as.data.frame(final.dt, stringsAsfactors = FALSE)
-  return(final.df)
-}
-
 ## ------------------------------------------------------------------------
 pred.df <- variable_confluence(hourly.df, "por", "por_1", 
                                hourly.df, "mon_jug", "mon_jug", klag.df) %>% 

@@ -121,8 +121,13 @@ calc_rmse <- function(long.df, pred.df) {
   lagk.results.dt <- data.table::data.table(pred.df)
   lagk.results.dt <- lagk.results.dt[site %in% c("lfalls", "predicted")]
   #----------------------------------------------------------------------------
+  # Remove the first day and any trailing predictions. 
+  # The first day is generally poorly predicted because there are no upstream data.
+  # Also, the prediction should go beyond the final observed lfalls value by at least an hour.
+  # Therefore, these leading and trailing values are not appropriate for the RMSE measure
+  # and could skew results.
   lfalls.dt <- lagk.results.dt[site == "lfalls"]
-  min.date <- min(lfalls.dt$date_time)
+  min.date <- min(lfalls.dt$date_time) + lubridate::days(1)
   max.date <- max(lfalls.dt$date_time)
   lagk.results.dt <- lagk.results.dt[date_time >= min.date & date_time <= max.date]
   #----------------------------------------------------------------------------

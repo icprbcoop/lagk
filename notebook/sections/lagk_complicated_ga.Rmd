@@ -5,55 +5,43 @@ date: "January 16, 2018"
 output: html_document
 ---
 
----
-title: "Optimization"
-author: Zachary M. Smith
-output: html_notebook
----
 
-## Simple Lag K Optimization using GA package: subreach is simply POR to LFalls.
-```{r}
-# klag.df columns are: site, flow, ..., lag, loss
-klag.df <- file.path(rprojroot::find_rstudio_root_file(),
-                     "data/parameters/k_lag.csv") %>% 
-  data.table::fread(data.table = FALSE) %>%
-  rename_all(tolower) %>%
-  mutate(site = tolower(site))
-```
+## Load Functions
 
 ```{r}
-hourly.df <- file.path(rprojroot::find_rstudio_root_file(),
-                       "data_ts/historical/flows_obs/hourly_flows/hourly_flows.csv") %>%
-  data.table::fread(
-    data.table = FALSE,
-    na.strings = c("", " ", "Eqp", "#N/A", "-999999"),
-    showProgress = FALSE) %>% 
-  filter(site %in% c("goose", "lfalls", "mon_jug", "por", "seneca")) %>% 
-  mutate(date_time = ymd_hms(date_time)) %>% 
-  filter(!is.na(flow))
-```
-
-```{r}
-# 
 source(file.path(rprojroot::find_rstudio_root_file(), "functions/variable_lagk_func.R"))
 ```
-
 
 ## Simple Test
 
 For simple first test of GA, just predict L Falls from area-adjusted Point of Rocks, forgetting for the moment about withdrawals, and restrict time period.
 ```{r}
 # 
-start_data <- as.POSIXct("1997-04-01 00:00")
-end_data <- as.POSIXct("1997-06-01 00:00")
+start_data <- as.POSIXct("1995-10-01 00:00")
+end_data <- as.POSIXct("2000-10-01 00:00")
 #
-hourly.adj.df <- hourly.df %>%
+hourly.adj.sub <- hourly.adj.df %>%
   dplyr::filter(date_time >= start_data, 
                 date_time < end_data) %>%
   dplyr::mutate(flow = case_when(
-    site == "por" ~ flow * 11560/9651, # area-adj POR flow
+    site == "por" ~ flow * 11560 / 9651, # area-adj POR flow
     TRUE ~ flow)) %>% 
-  select(-agency, -timezone, -qual_code)
+  select(site, date_time, flow)
+
+hourly.adj.sub <- hourly.adj.df %>%
+  dplyr::filter(date_time >= start_data, 
+                date_time < end_data) %>%
+  select(site, date_time, flow)
+
+hourly.adj.sub <- hourly.adj.df %>%
+  mutate(month = lubridate::month(date_time, label = TRUE),
+         year = lubridate::year(date_time),
+         water_year = if_else(month %in% c("Oct", "Nov", "Dec"))
+  ) %>% 
+  filter(dplyr::between(year, 1972, 1995))
+dplyr::filter(date_time >= start_data, 
+              date_time < end_data) %>%
+  select(site, date_time, flow)
 ```
 
 ```{r}
@@ -61,32 +49,67 @@ hourly.adj.df <- hourly.df %>%
 #    the "fitness" function.
 # Values of theta = c(lag, loss) will be adjusted by GA 
 #     to maximize negative_rmse.
-#theta <- c(lag.min, loss.min)
+#theta <- c(lag.org, loss.org)
 #theta <- lag.min
-#long.df = hourly.adj.df
+#long.df = hourly.adj.sub
 #vklag.df = klag.alt
-negative_rmse <- function(theta, long.df, vklag.df) {
-  #----------------------------------------------------------------------------
-  theta.vec <- unlist(theta)
-  #----------------------------------------------------------------------------
-  klag.opt <- vklag.df
-  #klag.opt$lag <- theta.vec
-  klag.opt$lag <- theta.vec[1:(length(theta.vec) / 2)]
-  klag.opt$loss <- theta.vec[(length(theta.vec) / 2 + 1):length(theta.vec)]
-  #----------------------------------------------------------------------------
-  pred.df <- pred_lfalls(long.df, klag.opt)
-  #----------------------------------------------------------------------------
-  rmse <- calc_rmse(long.df, pred.df)
+find_rmse <- function(long.df, klag.dt) {
+  pred.df <- pred_lfalls(long.df, klag.dt)
+  rmse <- calc_rmse(pred.df, remove.days = 3)
+  return(rmse)
+}
+```
+
+```{r}
+negative_rmse <- function(theta, long.df, klag.reach, klag.subreach) {
+  klag.dt <- update_klag(theta, klag.reach, klag.subreach)
+  pred.df <- pred_lfalls(long.df, klag.dt)
+  rmse <- calc_rmse(pred.df, remove.days = 3)
   return(rmse)
 }
 ```
 
 
+```{r}
+update_klag <- function(theta, klag.reach, klag.subreach) {
+  theta.vec <- unlist(theta)
+  klag.reach <- data.table::data.table(klag.reach)
+  klag.subreach <- data.table::data.table(klag.subreach)
+  #----------------------------------------------------------------------------
+  klag.reach[, lag := theta.vec[1:(length(theta.vec) / 2)]]
+  klag.reach[, loss := theta.vec[(length(theta.vec) / 2 + 1):length(theta.vec)]]
+  #----------------------------------------------------------------------------
+  data.table::setkey(klag.reach, reach)
+  data.table::setkey(klag.subreach, reach)
+  klag.dt <- merge(klag.reach, klag.subreach, allow.cartesian = TRUE)
+  klag.dt[, lag := lag * frac_of_reach_length]
+  return(klag.dt)
+}
+```
+
+```{r}
+group.col <- quote(site)
+group.vec <- c("goose", "lfalls")
+loop_rmse <- function(theta, long.df, group.col, group.vec, klag.reach, klag.subreach) {
+  group.col <- quote(group.col)
+  
+  klag.dt <- update_klag(theta, klag.reach, klag.subreach)
+  
+  long.dt <- data.table::data.table(long.df)
+  rmse.vec <- purrr::map_dbl(group.vec, function(group.i) {
+    long.sub <- subset(long.dt, eval(group.col) %in% group.i)
+    find_rmse(long.sub, klag.dt)
+  })
+  
+  return(sum(rmse.vec))
+}
+```
+
 
 ## GA
 
 ```{r}
-klag.alt <- klag.df %>%  
+klag.alt <- klag.reach %>%  
   #filter(site != "por_all") %>% 
   mutate(lag_quant = lag * 0.1,
          lag_min = lag - lag_quant,
@@ -103,20 +126,26 @@ loss.org <- klag.alt$loss
 ```
 
 ```{r}
-org.rmse <- negative_rmse(c(lag.org, loss.org), long.df = hourly.adj.df, vklag.df = klag.alt)
+org.rmse <- negative_rmse(c(lag.org, loss.org), long.df = hourly.adj.sub, klag.reach, klag.subreach)
 ```
 
+
 ```{r}
-ga.simple <- ga(type = "real-valued", fitness = negative_rmse,
-               long.df = hourly.adj.df, vklag.df = klag.alt,
-               min = c(lag.min, loss.min),
-               max = c(lag.max, loss.max),
-               run  = 20,
-               maxiter = 200,
-               seed = 84,  # Selected with: sample(1:100, 1)
-               optim = TRUE,
-               parallel = TRUE
-               )
+system.time(
+ga.simple <- ga(type = "real-valued",
+                fitness = negative_rmse,
+                long.df = hourly.adj.sub,
+                klag.reach = klag.reach,
+                klag.subreach = klag.subreach,
+                min = c(lag.min, loss.min),
+                max = c(lag.max, loss.max),
+                run  = 20,
+                maxiter = 2,
+                seed = 84,  # Selected with: sample(1:100, 1)
+                optim = TRUE#,
+                #parallel = TRUE
+)
+)
 summary(ga.simple)
 ```
 
@@ -138,7 +167,7 @@ data.table::fwrite(klag.alt,
 ```
 
 ```{r}
-org.df <- pred_lfalls(hourly.adj.df, klag.alt)
+org.df <- pred_lfalls(hourly.adj.su, klag.alt)
 ```
 
 ```{r}
@@ -146,7 +175,7 @@ klag.ga <- klag.alt %>%
   select(site, flow, best_lag, best_loss) %>% 
   rename(lag = best_lag,
          loss = best_loss)
-ga.df <- pred_lfalls(hourly.adj.df, klag.ga) %>% 
+ga.df <- pred_lfalls(hourly.adj.sub, klag.ga) %>% 
   mutate(site = if_else(site == "predicted", "ga", site)) %>% 
   filter(site == "ga")
 ```
@@ -162,11 +191,11 @@ comb.df <- org.df %>%
 ggplot(comb.df, aes(date_time, flow, group = site)) +
   geom_line(aes(color = site, size = site, alpha = site)) +
   scale_alpha_manual(values = c("lfalls" = 1,
-                               "ga" = 0.5,
-                               "original" = 0.5)) +
+                                "ga" = 0.5,
+                                "original" = 0.5)) +
   scale_color_manual(values = c("lfalls" = "gray",
-                               "ga" = "red",
-                               "original" = "green")) +
+                                "ga" = "red",
+                                "original" = "green")) +
   scale_size_manual(values = c("lfalls" = 1.2,
                                "ga" = 1,
                                "original" = 1)) +

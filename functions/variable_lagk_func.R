@@ -1,8 +1,8 @@
 
-variable_lagk <- function(long.df, site.name, por.lag, klag.df) {
+variable_lagk <- function(long.df, site.name, subreach.name, klag.df) {
   #------------------------------------------------------------------------------
   klag.sub <- klag.df %>% 
-    dplyr::filter(site == por.lag) %>% 
+    dplyr::filter(subreach == subreach.name) %>% 
     dplyr::select(flow, lag)
   #------------------------------------------------------------------------------
   predicted.df <- long.df %>% 
@@ -46,10 +46,10 @@ variable_confluence <- function(long1.df, gage1, lag1,
   return(final.df)
 }
 #==============================================================================
-fast_variable_lagk <- function(long.df, site.name, por.lag, klag.df) {
+fast_variable_lagk <- function(long.df, site.name, subreach.name, klag.df) {
   #------------------------------------------------------------------------------
   klag.sub <- data.table::data.table(klag.df)
-  klag.sub <- klag.sub[site == por.lag]
+  klag.sub <- klag.sub[subreach == subreach.name]
   klag.sub <- klag.sub[, c('flow', 'lag', 'loss'), with = FALSE]
   #------------------------------------------------------------------------------
   long.df <- data.table::data.table(long.df)
@@ -104,12 +104,12 @@ fast_variable_confluence <- function(long1.df, gage1, lag1,
 #==============================================================================
 pred_lfalls <- function(long.df, klag.df) {
   conf.1 <- fast_variable_confluence(long.df, "por", "por_1", 
-                                 long.df, "mon_jug", "mon_jug", klag.df)
+                                 long.df, "mon_jug", "monoc_1", klag.df)
   
   conf.2 <- fast_variable_confluence(conf.1,"predicted", "por_2",
-                                 long.df, "goose", "goose", klag.df)
+                                 long.df, "goose", "goose_1", klag.df)
   conf.3 <- fast_variable_confluence(conf.2, "predicted", "por_3",
-                                 long.df, "seneca", "seneca", klag.df)
+                                 long.df, "seneca", "seneca_1", klag.df)
   
   pred.df <- fast_variable_lagk(conf.3, "predicted", "por_4", klag.df)
   final.dt <- data.table::rbindlist(list(long.df, pred.df))
@@ -117,17 +117,17 @@ pred_lfalls <- function(long.df, klag.df) {
   return(final.df)
 }
 #==============================================================================
-calc_rmse <- function(long.df, pred.df) {
+calc_rmse <- function(pred.df, remove.days = 3) {
   lagk.results.dt <- data.table::data.table(pred.df)
   lagk.results.dt <- lagk.results.dt[site %in% c("lfalls", "predicted")]
   #----------------------------------------------------------------------------
   # Remove the first day and any trailing predictions. 
-  # The first day is generally poorly predicted because there are no upstream data.
+  # The first 3 days is generally poorly predicted because there are no upstream data.
   # Also, the prediction should go beyond the final observed lfalls value by at least an hour.
   # Therefore, these leading and trailing values are not appropriate for the RMSE measure
   # and could skew results.
   lfalls.dt <- lagk.results.dt[site == "lfalls"]
-  min.date <- min(lfalls.dt$date_time) + lubridate::days(1)
+  min.date <- min(lfalls.dt$date_time) + lubridate::days(remove.days)
   max.date <- max(lfalls.dt$date_time)
   lagk.results.dt <- lagk.results.dt[date_time >= min.date & date_time <= max.date]
   #----------------------------------------------------------------------------

@@ -70,7 +70,6 @@ negative_rmse <- function(theta, long.df, klag.reach, klag.subreach) {
 ```
 
 
-
 ```{r}
 update_klag <- function(theta, klag.reach, klag.subreach) {
   theta.vec <- unlist(theta)

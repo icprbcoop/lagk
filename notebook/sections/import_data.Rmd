@@ -6,6 +6,8 @@ output: html_document
 ---
 
 ## Import Hourly Data
+
+The hourly data is compressed as a zip file to make it possible to store the large data table on Git Hub. The data needs to be unzipped and writen to the computers disk before it can be extracted. `overwrite = TRUE` will overwrite any file with the same name that already exists in the specified directory. Otherwise, R will throw an error and will not allow you to unzip the file. `data.table::fread()` is used to extract the CSV file. Only data from the Point of Rocks (`por`), Monacacy River (`mon_jug`), Goose Creek (`goose`), Seneca Creek (`seneca`), and Little Falls (`lfalls`) gages are retained. `lubridate::ymd_hms()` is used to standardize the `date_time` columne to Year-Month-Day Hour:Minute:Second. Finally, any rows with missing `flow` data are excluded from data frame.
 ```{r}
 hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows.zip") %>%
   unzip(exdir = file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows"),
@@ -17,53 +19,90 @@ hourly.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/
   dplyr::filter(site %in% c("goose", "lfalls", "mon_jug", "por", "seneca")) %>% 
   mutate(date_time = ymd_hms(date_time)) %>% 
   dplyr::filter(!is.na(flow))
+
+#close.connection(file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/flows_obs/hourly_flows"))
 ```
 
+Only `date_time`, `site`, and `flow` columns are retained. `date_time` and `site` are used to aggregate the data and any `flow` reported for the same`date_time` and `site` are averaged together. `date_time` and `site` act as a unique key, so there cannot be duplicate `flow` values associated with the key. Finally, any rows with missing `flow` data are excluded from data frame.
 ```{r}
 hourly.df <- hourly.df %>% 
   select(date_time, site, flow) %>% 
   group_by(date_time, site) %>% 
   summarize(flow = mean(flow, na.rm = TRUE)) %>% 
-  ungroup() %>%
-  spread(site, flow) %>% 
-  dplyr::filter(!is.na(goose) & !is.na(lfalls) & 
-                  !is.na(mon_jug) & !is.na(por) & !is.na(seneca)) %>% 
-  gather(site, flow, goose:seneca)
+  ungroup() %>% 
+  dplyr::filter(!is.na(flow))
 ```
+
 The area adjustment factors below account for ungaged drainage areas. They were computed using river segment areas in the CBP's Phase 5.2 watershed model. 
 ```{r}
-hourly_adjusted.df <- hourly.df %>% 
-  dplyr::mutate(flow = case_when(
-    site == "por" ~ flow * 1.046,
-    site == "mon_jug" ~ flow * 1.189,
-    site == "goose" ~ flow * 1.164,
-    site == "seneca" ~ flow * 1.270,
-    TRUE ~ flow * 1
-  ))
+hourly.adj.df <- hourly.df %>% 
+  dplyr::mutate(
+    flow = case_when(
+      site == "por" ~ flow * 1.046,
+      site == "mon_jug" ~ flow * 1.189,
+      site == "goose" ~ flow * 1.164,
+      site == "seneca" ~ flow * 1.270,
+      TRUE ~ flow * 1
+    )
+  )
 ```
 
 ## Import Withdrawals
+
+The withdrawal data is currently not too large to store on Git Hub as a CSV, so it is not compressed as a zip file. the withdrawal data is imported with `data.table::fread()`.
 ```{r}
 with.df <- file.path(rprojroot::find_rstudio_root_file(), "data_ts/historical/withdrawals/withdrawals_wma_daily_mgd_1990_2017.csv") %>%
   data.table::fread(data.table = FALSE,
-                    na.strings = c("", " ", "Eqp", "#N/A", "-999999")) %>% 
-  dplyr::filter(!rowSums(is.na(.)) == ncol(.))
+                    na.strings = c("", " ", "Eqp", "#N/A", "-999999"))
 ```
-### Right now, must grab data from 3 "locations" to get withdrawals at all 4 WMA Potomac river intakes. Need to talk more with Sarah about date of "yesterday" withdrawal. 
+
+__Right now, must grab data from 3 "locations" to get withdrawals at all 4 WMA Potomac river intakes. Need to talk more with Sarah about date of "yesterday" withdrawal.__
+
+Retain only rows where location containse the string "Potomac River", "Potomac River at Little Falls", or
+"Potomac River at Great Falls". `grepl()` could also be used here: `grepl("Potomac River", location)`.
 ```{r}
 pot.wma.total.daily <- with.df %>% 
-  dplyr::filter(location %in% c("Potomac River", "Potomac River at Little Falls",
-                                "Potomac River at Great Falls") ) %>% 
+  filter(grepl("Potomac River", location)) %>% 
+#  dplyr::filter(location %in% c("Potomac River", "Potomac River at Little Falls","Potomac River at Great Falls")) %>% 
   dplyr::group_by(measurement, date_time, units) %>% 
   dplyr::summarize(value = sum(value)) %>% 
   dplyr::ungroup() %>% 
   dplyr::mutate(unique_id = "potomac_wma_total", date = as.Date(date_time),
                 withdr_pot_tot_mgd = value) %>% 
-  dplyr::filter(!rowSums(is.na(.)) == ncol(.)) %>%
-  dplyr:: select(date, withdr_pot_tot_mgd)
+  dplyr::select(date, withdr_pot_tot_mgd)
 ```
 
-# Don't remove for now for QAing:
+## Import K-Lag Tables
+
+```{r}
+# klag.df columns are: site, flow, ..., lag, loss
+klag.df <- file.path(rprojroot::find_rstudio_root_file(),
+                     "data/parameters/k_lag.csv") %>% 
+  data.table::fread(data.table = FALSE) %>%
+  rename_all(tolower) %>%
+  mutate(site = tolower(site))
+```
+
+Import tables that are specific to reach and subreach. `klag.reach` values will be altered using the genetic algorithm and then merged with `klag.subreach`.
+```{r}
+klag.reach <- file.path(rprojroot::find_rstudio_root_file(),
+                     "data/parameters/k_lag_reaches.csv") %>% 
+  data.table::fread(data.table = FALSE) %>%
+  rename_all(tolower) %>%
+  mutate_if(is.character, tolower) %>% 
+  rename(lag = reach_lag_hours,
+         loss = reach_loss_fraction,
+         flow = flow_cfs)
+
+klag.subreach <- file.path(rprojroot::find_rstudio_root_file(),
+                     "data/parameters/k_lag_subreaches.csv") %>% 
+  data.table::fread(data.table = FALSE) %>%
+  rename_all(tolower) %>%
+  mutate_if(is.character, tolower)
+```
+
+__Don't remove for now for QAing:__
+Remove objects that are no longer useful to clean up the global environment.
 ```{r}
 #rm(with.df, withdrawals.df, pot.total)
 ```

@@ -42,7 +42,7 @@ hourly.adj.df <- hourly.df %>%
     date = as.Date(date_time))
 hourly.adj.df <- left_join(hourly.adj.df, pot.wma.total.daily, by = "date") %>%
   dplyr::mutate(flow = if_else(site == "por",
-                               flow - withdr_pot_tot, flow)) %>%
+                               flow - withdr_pot_tot_mgd, flow)) %>%
   select(date_time, site, flow)
 ```
 
@@ -129,7 +129,7 @@ summary(GAsimple)
 ```{r}
 # For reference, 
 # we started with 48.0, 0.00, 30.0, 0.00, 24.0, 0.00
-lags_losses <- c(48.1, 0.00, 30.0, 0.00, 24.0, 0.00)
+lags_losses <- c(50.9, -0.01, 25.8, 0.03, 23.5, 0.04)
    klag.new.df <- klag.df %>%
     dplyr::mutate(lag = if_else(site == "por_all" & flow == 10, 
                                 lags_losses[1], lag)) %>%
@@ -147,7 +147,7 @@ lags_losses <- c(48.1, 0.00, 30.0, 0.00, 24.0, 0.00)
 # Now use the new lags and losses to predict flow at lfalls:
   pred.df <- variable_lagk(hourly.adj.df, "por", "por_all", klag.new.df)
 #
-# Compute rmse_log, mean error, and mean absolute percent error for full range of flows:
+# Compute some error stats - for full range of flows and for range of low flows:
   lagk.results.df <- bind_rows(hourly.adj.df, pred.df) %>%
   dplyr::filter(site %in% c("lfalls", "predicted"))
   #
@@ -155,29 +155,33 @@ lags_losses <- c(48.1, 0.00, 30.0, 0.00, 24.0, 0.00)
   tidyr::spread(site, flow) %>%
   dplyr::filter(!is.na(lfalls), !is.na(predicted)) %>%
     dplyr::rename(obs = lfalls, sim = predicted) %>%
-    dplyr::mutate(se = (log10(obs) - log10(sim))^2,
-                  err = sim - obs,
-                  ape = abs((sim - obs)/obs))
-  mse_log <- mean(lagk.results.wide$se)
-  merr <- mean(lagk.results.wide$err)
-  mape <- mean(lagk.results.wide$ape)
+    dplyr::mutate(se_log = (log10(obs) - log10(sim))^2, # square error of logs
+                  obs_log = log10(obs),
+                  err = sim - obs, # error
+                  ape = abs((sim - obs)/obs)) # absolute percent error
+  mo_log <- mean(lagk.results.wide$obs_log)
+  mse_log <- mean(lagk.results.wide$se_log) # mean of square errors of logs
+  msx <- mean( (lagk.results.wide$obs_log - mo_log)^2 )
+  nse <- 1 - mse_log/msx # Nash-Suttcliffe efficiency - a popular time series model error
+  merr <- mean(lagk.results.wide$err) # mean error
+  mape <- mean(lagk.results.wide$ape) # mean absolute percent error
 #
-# Compute mean error and MAPE for low flows (<= 1000 cfs for now)  
+# For low flows (<= 1000 cfs for now)  
   lowflow_level <- 1000
-lagk.results.low <- lagk.results.wide %>%
+  lagk.results.low <- lagk.results.wide %>%
   dplyr::filter(obs <= lowflow_level) %>%
   dplyr::mutate(lobs = log10(obs), lsim = log10(sim))
 
-mse <- mean(lagk.results.wide$se)
-mss <- mean(lagk.results.wide$ss)
-mae <- mean(lagk.results.wide$ae)
-mape <- mean(lagk.results.wide$ape)
-nse <- 1 - mse/mss
-mse_l <- mean(lagk.results.wide$se_l)
-mss_l <- mean(lagk.results.wide$ss_l)
-mae_l <- mean(lagk.results.wide$ae_l)
-mape_l <- mean(lagk.results.wide$ape_l)
-nse_l <- 1 - mse_l/mss_l
+  mo_log_low <- mean(lagk.results.low$obs_log)
+  mse_log_low <- mean(lagk.results.low$se_log)
+  msx_low <- mean( (lagk.results.low$obs_log - mo_log_low)^2 )
+  nse_low <- 1 - mse_log_low/msx_low
+  merr_low <- mean(lagk.results.low$err)
+  mape_low <- mean(lagk.results.low$ape)
+
+lagk_stats <- c(mo_log, mse_log, nse, merr, mape,
+                mo_log_low, mse_log_low, nse_low, merr_low, mape_low)
+lagk_stats
 
 ```
 ## 

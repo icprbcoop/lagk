@@ -5,8 +5,10 @@ output: html_notebook
 ---
 
 ## Simple Lag K Optimization using GA package: subreach is simply POR to LFalls.
+### Consider renaming klag.df columns to reach, subreach, ..., lag_reach, lag_subreach, ...
 ```{r}
-# klag.df columns are: site, flow, ..., lag, loss
+# klag.df columns are: site, flow, ..., lag, loss.
+#   - in this analysis we're interested in site = por_all.
 klag.df <- file.path(rprojroot::find_rstudio_root_file(),
                              "data/parameters/k_lag.csv") %>% 
   data.table::fread(data.table = FALSE) %>%
@@ -27,8 +29,8 @@ date_frame <- function(start.date, end.date, seq.by = "hour") {
 ## For simple first test of GA, just predict L Falls from area-adjusted Point of Rocks, forgetting for the moment about withdrawals, and restrict time period.
 ```{r}
 # 
-start_data <- as.POSIXct("1997-04-01 00:00")
-end_data <- as.POSIXct("1997-06-01 00:00")
+start_data <- as.POSIXct("1996-01-01 00:00")
+end_data <- as.POSIXct("2000-12-01 00:00")
 #
 hourly.adj.df <- hourly.df %>%
   dplyr::filter(site  %in% c("por", "lfalls"),
@@ -36,7 +38,12 @@ hourly.adj.df <- hourly.df %>%
                 date_time < end_data) %>%
   dplyr::mutate(flow = case_when(
     site == "por" ~ flow * 11560/9651, # area-adj POR flow
-    TRUE ~ flow * 1))
+    TRUE ~ flow * 1),
+    date = as.Date(date_time))
+hourly.adj.df <- left_join(hourly.adj.df, pot.wma.total.daily, by = "date") %>%
+  dplyr::mutate(flow = if_else(site == "por",
+                               flow - withdr_pot_tot_mgd, flow)) %>%
+  select(date_time, site, flow)
 ```
 
 ```{r}
@@ -58,10 +65,18 @@ negative_rmse <- function(theta, long.df, gage, subreach, vklag.df) {
   # First need to change targeted lags and losses in klag.df
   # klag.opt will be like klag.df, but will have the altered lag & loss
    klag.opt <- vklag.df %>%
-    dplyr::mutate(lag = if_else(site == "por_all" & flow == 5000, 
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 10, 
                                 theta[1], lag)) %>%
-    dplyr::mutate(loss = if_else(site == "por_all" & flow == 5000, 
-                                theta[2], loss))
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 10, 
+                                theta[2], loss)) %>%
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 500, 
+                                theta[3], lag)) %>%
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 500, 
+                                theta[4], loss)) %>%
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 2500, 
+                                theta[5], lag)) %>%
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 2500, 
+                                theta[6], loss))
   #
   pred.df <- variable_lagk(long.df, gage, subreach, klag.opt)
   #
@@ -72,7 +87,7 @@ negative_rmse <- function(theta, long.df, gage, subreach, vklag.df) {
   lagk.results.wide <- lagk.results.df %>%
   tidyr::spread(site, flow) %>%
   dplyr::filter(!is.na(lfalls), !is.na(predicted)) %>%
-    dplyr::mutate(se = (lfalls - predicted)^2)
+    dplyr::mutate(se = (log10(lfalls) - log10(predicted))^2)
   mse <- mean(lagk.results.wide$se)
 # rmse <- sqrt(mean(lagk.results.wide$lfalls
 #                  - lagk.results.wide$predicted)^2)
@@ -81,10 +96,15 @@ rmse2 <- sqrt(mse)
 answer <- -rmse2
 return(answer)
 }
-#test <- negative_rmse(c(48, 0), hourly.adj.df, "por", "por_all", klag.df)
-#write.csv(test[1], file = "dump.csv")
-#test[2]
-#test[3]
+testlfalls <- filter(hourly.adj.df, site == "lfalls")
+testpor <- filter(hourly.adj.df, site == "por")
+min(testpor$flow)
+quantile(testpor$flow, 0.02)
+max(testpor$flow)
+min(testlfalls$flow)
+quantile(testlfalls$flow, 0.02)
+max(testlfalls$flow)
+
 
 ```
 
@@ -94,8 +114,9 @@ return(answer)
 GAsimple <- ga(type = "real-valued", fitness = negative_rmse,
                long.df = hourly.adj.df, gage = "por", 
                subreach = "por_all", vklag.df = klag.df,
-               min = c(15, -0.05), max = c(25, 0.05),
-               maxiter = 50)
+               min = c(40, -0.05, 25, -0.05, 20, -0.05), 
+               max = c(60, 0.05, 45, 0.05, 30, 0.05),
+               maxiter = 5)
 summary(GAsimple)
 ```
 
@@ -103,39 +124,64 @@ summary(GAsimple)
 #
 
 ```
-## Create a wide df of lfalls sim and obs, and calculate some stats:
+## Evaluate the new lags and losses from GA by calculating some stats.
+### First copy in the final lags and losses from GA:
 ```{r}
-# lagk.df <- bind_rows(hourly.df, pred.df)
-lagk.results.df <- bind_rows(hourly.df, pred.df) %>%
+# For reference, 
+# we started with 48.0, 0.00, 30.0, 0.00, 24.0, 0.00
+lags_losses <- c(50.9, -0.01, 25.8, 0.03, 23.5, 0.04)
+   klag.new.df <- klag.df %>%
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 10, 
+                                lags_losses[1], lag)) %>%
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 10, 
+                                lags_losses[2], loss)) %>%
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 500, 
+                                lags_losses[3], lag)) %>%
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 500, 
+                                lags_losses[4], loss)) %>%
+    dplyr::mutate(lag = if_else(site == "por_all" & flow == 2500, 
+                                lags_losses[5], lag)) %>%
+    dplyr::mutate(loss = if_else(site == "por_all" & flow == 2500, 
+                                lags_losses[6], loss))
+# 
+# Now use the new lags and losses to predict flow at lfalls:
+  pred.df <- variable_lagk(hourly.adj.df, "por", "por_all", klag.new.df)
+#
+# Compute some error stats - for full range of flows and for range of low flows:
+  lagk.results.df <- bind_rows(hourly.adj.df, pred.df) %>%
   dplyr::filter(site %in% c("lfalls", "predicted"))
-lagk.results.wide <- lagk.results.df %>%
+  #
+  lagk.results.wide <- lagk.results.df %>%
   tidyr::spread(site, flow) %>%
-  dplyr::filter(lfalls != "NA", predicted != "NA") %>%
-  dplyr::rename(obs = lfalls, sim = predicted) %>%
+  dplyr::filter(!is.na(lfalls), !is.na(predicted)) %>%
+    dplyr::rename(obs = lfalls, sim = predicted) %>%
+    dplyr::mutate(se_log = (log10(obs) - log10(sim))^2, # square error of logs
+                  obs_log = log10(obs),
+                  err = sim - obs, # error
+                  ape = abs((sim - obs)/obs)) # absolute percent error
+  mo_log <- mean(lagk.results.wide$obs_log)
+  mse_log <- mean(lagk.results.wide$se_log) # mean of square errors of logs
+  msx <- mean( (lagk.results.wide$obs_log - mo_log)^2 )
+  nse <- 1 - mse_log/msx # Nash-Suttcliffe efficiency - a popular time series model error
+  merr <- mean(lagk.results.wide$err) # mean error
+  mape <- mean(lagk.results.wide$ape) # mean absolute percent error
+#
+# For low flows (<= 1000 cfs for now)  
+  lowflow_level <- 1000
+  lagk.results.low <- lagk.results.wide %>%
+  dplyr::filter(obs <= lowflow_level) %>%
   dplyr::mutate(lobs = log10(obs), lsim = log10(sim))
-simbar <- mean(lagk.results.wide$sim)
-obsbar <- mean(lagk.results.wide$obs)
-lsimbar <- mean(lagk.results.wide$lsim)
-lobsbar <- mean(lagk.results.wide$lobs)
-lagk.results.wide <- lagk.results.wide %>%
-  dplyr::mutate(se = (sim - obs)^2, 
-                ss = (obs - obsbar)^2,
-                ae = abs(sim - obs),
-                ape = abs((sim-obs)/obs),
-                se_l = (lsim - lobs)^2, 
-                ss_l = (lobs - lobsbar)^2,
-                ae_l = abs(lsim - lobs),
-                ape_l = abs((lsim-lobs)/lobs))
-mse <- mean(lagk.results.wide$se)
-mss <- mean(lagk.results.wide$ss)
-mae <- mean(lagk.results.wide$ae)
-mape <- mean(lagk.results.wide$ape)
-nse <- 1 - mse/mss
-mse_l <- mean(lagk.results.wide$se_l)
-mss_l <- mean(lagk.results.wide$ss_l)
-mae_l <- mean(lagk.results.wide$ae_l)
-mape_l <- mean(lagk.results.wide$ape_l)
-nse_l <- 1 - mse_l/mss_l
+
+  mo_log_low <- mean(lagk.results.low$obs_log)
+  mse_log_low <- mean(lagk.results.low$se_log)
+  msx_low <- mean( (lagk.results.low$obs_log - mo_log_low)^2 )
+  nse_low <- 1 - mse_log_low/msx_low
+  merr_low <- mean(lagk.results.low$err)
+  mape_low <- mean(lagk.results.low$ape)
+
+lagk_stats <- c(mo_log, mse_log, nse, merr, mape,
+                mo_log_low, mse_log_low, nse_low, merr_low, mape_low)
+lagk_stats
 
 ```
 ## 

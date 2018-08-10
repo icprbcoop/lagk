@@ -1,4 +1,4 @@
-site,flow,lag_to_lfalls,loss_to_lfalls,pct_of_stream_length,lag,loss
+subreach,flow,lag_to_lfalls,loss_to_lfalls,pct_of_stream_length,lag,loss
 GOOSE,0,24,0,1,24,0
 GOOSE,500,18,0,1,18,0
 GOOSE,2000,12,0,1,12,0
